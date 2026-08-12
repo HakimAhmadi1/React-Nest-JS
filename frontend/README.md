@@ -6,7 +6,7 @@ v4, TanStack Query, Zustand.
 ## Running
 
 ```bash
-npm install               # from the repo root (npm workspaces)
+npm install               # this directory is a standalone npm project
 cp .env.example .env
 npm run dev               # http://localhost:5173
 ```

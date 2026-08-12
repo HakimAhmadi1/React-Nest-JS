@@ -11,23 +11,32 @@ TanStack Query · Zustand
 
 ## Quick start
 
+`backend/` and `frontend/` are **independent npm projects**. Each has its own
+`package.json`, lock file and `node_modules`, and each is installed, built,
+run and deployed on its own. There is no workspace root and no command that
+drives both — open two terminals.
+
+**Terminal 1 — API**
+
 ```bash
-# 1. Install (npm workspaces — installs both apps)
+cd backend
 npm install
+cp .env.example .env
 
-# 2. Configure
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+# Set a real JWT secret — the API refuses to boot with the placeholder
+npm run jwtsecret -- --write   # omit --write to just print one
 
-# 3. Set a real JWT secret — the API refuses to boot with the placeholder
-npm run jwtsecret -- --write   # writes it straight into backend/.env
-# (omit --write to just print one)
+npm run migration:run          # create the schema
+npm run seed                   # starter data
+npm run start:dev
+```
 
-# 4. Create the schema, then the starter data
-npm run migration:run
-npm run seed
+**Terminal 2 — web app**
 
-# 5. Run both apps
+```bash
+cd frontend
+npm install
+cp .env.example .env
 npm run dev
 ```
 
@@ -130,8 +139,10 @@ Path aliases: `@common/*`, `@database/*`, `@modules/*` (backend) and `@/*`
 
 Schema changes go through migrations — `synchronize` is hardcoded off.
 
+All run from `backend/`:
+
 ```bash
-npm run migration:generate -- backend/src/database/migrations/AddSomething
+npm run migration:generate -- src/database/migrations/AddSomething
 npm run migration:run
 npm run migration:revert
 npm run seed                 # idempotent; safe to re-run
@@ -141,19 +152,36 @@ npm run seed                 # idempotent; safe to re-run
 
 ## Commands
 
-| Command                 | Description                          |
-| ----------------------- | ------------------------------------ |
-| `npm run dev`           | Run both apps                        |
-| `npm run build`         | Production build of both apps        |
-| `npm run lint`          | Lint both apps                       |
-| `npm test`              | Unit tests for both apps             |
-| `npm run test:e2e`      | Backend e2e tests (needs a database) |
-| `npm run migration:run` | Apply migrations                     |
-| `npm run seed`          | Seed starter data                    |
-| `npm run jwtsecret`     | Generate a JWT signing secret        |
-| `npm run docker:up`     | Start the full stack in Docker       |
+There is no repo-root command that drives both apps. Run each from its own
+directory.
 
-A `Makefile` wraps the same targets if you prefer `make dev`, `make test`, etc.
+**`backend/`**
+
+| Command                 | Description                                |
+| ----------------------- | ------------------------------------------ |
+| `npm run start:dev`     | NestJS in watch mode                       |
+| `npm run build`         | Production build to `dist/`                |
+| `npm run start:prod`    | Run the production build                   |
+| `npm run lint`          | Lint                                       |
+| `npm test`              | Unit tests                                 |
+| `npm run test:e2e`      | E2E tests (needs a **throwaway** database) |
+| `npm run migration:run` | Apply migrations                           |
+| `npm run seed`          | Seed starter data                          |
+| `npm run jwtsecret`     | Generate a JWT signing secret              |
+
+**`frontend/`**
+
+| Command           | Description                 |
+| ----------------- | --------------------------- |
+| `npm run dev`     | Vite dev server             |
+| `npm run build`   | Production build to `dist/` |
+| `npm run lint`    | Lint                        |
+| `npm test`        | Unit tests                  |
+| `npm run preview` | Serve the production build  |
+
+**Repo root** — no `package.json`, no `node_modules`, no build tooling. The only
+thing that spans both apps is `docker-compose.yml`, run with `docker compose`
+directly. Lint and format are enforced per app and in CI.
 
 ---
 
@@ -169,9 +197,11 @@ A `Makefile` wraps the same targets if you prefer `make dev`, `make test`, etc.
 - **Frontend:** route-level code splitting, `react-hook-form` + `zod`
   validation mirroring the backend DTO rules, TanStack Query, accessible
   dialogs and menus, and a real 404 page.
-- **Tooling:** npm workspaces, shared Prettier, ESLint 9 flat config on both
-  sides, husky + lint-staged, Dependabot, and CI that runs lint, format check,
-  unit tests, migrations, e2e tests, and Docker builds.
+- **Tooling:** two independent npm projects — separate lock files, separate
+  `node_modules`, separate deploys, nothing shared at the repo root. Each app
+  carries its own ESLint 9 flat config, Prettier and tests, and CI runs lint,
+  format check, unit tests, migrations, e2e tests and a Docker build for each
+  app on its own.
 
 ## Not included (deliberately)
 

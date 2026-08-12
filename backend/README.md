@@ -6,7 +6,7 @@ rotating refresh tokens.
 ## Running
 
 ```bash
-npm install                     # from the repo root (npm workspaces)
+npm install                     # this directory is a standalone npm project
 cp .env.example .env
 npm run jwtsecret -- --write    # generates JWT_SECRET into .env
 npm run migration:run

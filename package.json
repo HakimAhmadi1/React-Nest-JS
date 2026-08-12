@@ -28,7 +28,7 @@
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "prepare": "husky",
+    "prepare": "node scripts/prepare.mjs",
     "jwtsecret": "npm run jwtsecret --workspace backend"
   },
   "devDependencies": {
@@ -46,6 +46,9 @@
     "frontend/**/*.{js,jsx}": [
       "prettier --write",
       "npm exec --workspace frontend -- eslint --fix"
+    ],
+    "scripts/**/*.mjs": [
+      "prettier --write"
     ],
     "*.{json,md,yml,yaml}": [
       "prettier --write"

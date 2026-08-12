@@ -1,0 +1,54 @@
+{
+  "name": "fullstack-boilerplate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready NestJS + React boilerplate",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm run start:dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "lint": "npm run lint --workspace backend && npm run lint --workspace frontend",
+    "lint:fix": "npm run lint:fix --workspace backend && npm run lint:fix --workspace frontend",
+    "format": "npm run format --workspace backend && npm run format --workspace frontend",
+    "format:check": "npm run format:check --workspace backend && npm run format:check --workspace frontend",
+    "test": "npm test --workspace backend && npm test --workspace frontend",
+    "test:e2e": "npm run test:e2e --workspace backend",
+    "migration:run": "npm run migration:run --workspace backend",
+    "migration:generate": "npm run migration:generate --workspace backend",
+    "seed": "npm run seed --workspace backend",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "prepare": "husky",
+    "jwtsecret": "npm run jwtsecret --workspace backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2"
+  },
+  "//lint-staged": "eslint is installed per workspace and is not hoisted to the root .bin, so a bare `eslint` is not on PATH for the hook. `npm exec --workspace` runs each workspace's own binary with that workspace as its cwd, which is also how the flat config gets found.",
+  "lint-staged": {
+    "backend/**/*.ts": [
+      "prettier --write",
+      "npm exec --workspace backend -- eslint --fix"
+    ],
+    "frontend/**/*.{js,jsx}": [
+      "prettier --write",
+      "npm exec --workspace frontend -- eslint --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+# Normalise line endings: this repo is developed on Windows and built on Linux
+# CI, and `forceConsistentCasingInFileNames`/LF mismatches were a real hazard.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+package-lock.json linguist-generated=true -diff

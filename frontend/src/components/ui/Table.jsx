@@ -1,4 +1,4 @@
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown } from "lucide-react";
 
 /**
  * Reusable Table component.
@@ -16,10 +16,10 @@ const Table = ({
   columns = [],
   data = [],
   sortBy,
-  sortDir = 'asc',
+  sortDir = "asc",
   onSort,
   loading = false,
-  emptyMessage = 'No records found.',
+  emptyMessage = "No records found.",
   // Pagination props
   currentPage = 1,
   totalItems = 0,
@@ -50,7 +50,6 @@ const Table = ({
       pages.push(i);
     }
 
-
     return (
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900/50 border-t border-gray-800">
         <div className="flex-1 flex justify-between sm:hidden">
@@ -72,13 +71,19 @@ const Table = ({
         <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-gray-500">
-              Showing <span className="font-medium text-gray-300">{totalItems > 0 ? startItem : 0}</span> to{' '}
-              <span className="font-medium text-gray-300">{endItem}</span> of{' '}
+              Showing{" "}
+              <span className="font-medium text-gray-300">
+                {totalItems > 0 ? startItem : 0}
+              </span>{" "}
+              to <span className="font-medium text-gray-300">{endItem}</span> of{" "}
               <span className="font-medium text-gray-300">{totalItems}</span> results
             </p>
           </div>
           <div>
-            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+            <nav
+              className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+              aria-label="Pagination"
+            >
               <button
                 onClick={() => onPageChange(currentPage - 1)}
                 disabled={currentPage === 1}
@@ -93,8 +98,8 @@ const Table = ({
                   onClick={() => onPageChange(p)}
                   className={`relative inline-flex items-center px-4 py-2 border border-gray-700 text-sm font-medium transition-colors ${
                     currentPage === p
-                      ? 'z-10 bg-primary-600 border-primary-600 text-white'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      ? "z-10 bg-primary-600 border-primary-600 text-white"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
                   }`}
                 >
                   {p}
@@ -125,14 +130,32 @@ const Table = ({
                 <th
                   key={col.key}
                   onClick={() => handleSort(col)}
-                  className={col.sortable ? 'cursor-pointer select-none hover:text-gray-200 transition-colors' : ''}
+                  className={
+                    col.sortable
+                      ? "cursor-pointer select-none hover:text-gray-200 transition-colors"
+                      : ""
+                  }
                 >
                   <span className="inline-flex items-center gap-1">
                     {col.label}
                     {col.sortable && (
                       <span className="flex flex-col opacity-40">
-                        <ChevronUp size={10} className={sortBy === col.key && sortDir === 'asc' ? 'opacity-100 text-primary-400' : ''} />
-                        <ChevronDown size={10} className={sortBy === col.key && sortDir === 'desc' ? 'opacity-100 text-primary-400' : ''} />
+                        <ChevronUp
+                          size={10}
+                          className={
+                            sortBy === col.key && sortDir === "asc"
+                              ? "opacity-100 text-primary-400"
+                              : ""
+                          }
+                        />
+                        <ChevronDown
+                          size={10}
+                          className={
+                            sortBy === col.key && sortDir === "desc"
+                              ? "opacity-100 text-primary-400"
+                              : ""
+                          }
+                        />
                       </span>
                     )}
                   </span>
@@ -160,9 +183,7 @@ const Table = ({
               data.map((row, idx) => (
                 <tr key={row.id ?? idx} className="transition-colors">
                   {columns.map((col) => (
-                    <td key={col.key}>
-                      {col.render ? col.render(row) : row[col.key]}
-                    </td>
+                    <td key={col.key}>{col.render ? col.render(row) : row[col.key]}</td>
                   ))}
                 </tr>
               ))

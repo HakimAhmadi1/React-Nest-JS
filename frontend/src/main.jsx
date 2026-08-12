@@ -1,22 +1,26 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
-import App from './App'
-import { AuthProvider } from './context/AuthContext'
-import { SettingsProvider } from './context/SettingsContext'
-import ErrorBoundary from './components/common/ErrorBoundary'
-import './index.css'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import App from "./App";
+import { SettingsProvider } from "./context/SettingsContext";
+import ErrorBoundary from "./components/common/ErrorBoundary";
+import { queryClient } from "./lib/queryClient";
+import "./index.css";
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+// AuthProvider is gone: session state lives in the Zustand store, and App
+// bootstraps it via useAuthBootstrap(). QueryClientProvider sits above
+// SettingsProvider because settings are fetched with React Query.
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <SettingsProvider>
-          <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <SettingsProvider>
             <App />
-          </AuthProvider>
-        </SettingsProvider>
-      </BrowserRouter>
+          </SettingsProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
     </ErrorBoundary>
-  </React.StrictMode>
-)
+  </React.StrictMode>,
+);

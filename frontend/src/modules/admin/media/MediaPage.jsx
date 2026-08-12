@@ -1,71 +1,85 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, Copy, Check, Trash2, Search, Image as ImageIcon, ExternalLink, Filter } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { getApi, postApi } from '@/services/api';
-import Button from '@/components/ui/Button';
-import Badge from '@/components/ui/Badge';
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Image as ImageIcon,
+  Search,
+  Upload,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import { getApi, postApi } from "@/services/api";
+import { assetUrl } from "@/utils/assetUrl";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 const MediaPage = () => {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const BACKEND = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3003';
+  const fileInputRef = useRef(null);
+  const debouncedSearch = useDebouncedValue(search, 250);
 
-  const { data: media = [], isLoading } = useQuery({
-    queryKey: ['media'],
-    queryFn: async () => {
-      const res = await getApi('upload');
-      const data = res.data;
-      return Array.isArray(data) ? data : data?.data || [];
-    },
+  const {
+    data: media = [],
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ["media"],
+    queryFn: () => getApi("upload"),
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (file) => {
+    mutationFn: (file) => {
       const formData = new FormData();
-      formData.append('file', file);
-      return postApi('upload/cloudinary/image', formData, null, true, {
-        'Content-Type': 'multipart/form-data',
-      });
+      formData.append("file", file);
+      // No explicit Content-Type: axios must set it so the multipart boundary
+      // is included. Setting it by hand made every upload fail to parse.
+      return postApi("upload/image", formData);
     },
     onSuccess: () => {
-      toast.success('Media uploaded successfully!');
-      queryClient.invalidateQueries({ queryKey: ['media'] });
-      setIsUploading(false);
+      toast.success("Media uploaded");
+      queryClient.invalidateQueries({ queryKey: ["media"] });
     },
-    onError: (err) => {
-      toast.error(`Upload failed: ${err.message || 'Unknown error'}`);
-      setIsUploading(false);
-    }
+    onError: (err) => toast.error(err.message || "Upload failed"),
   });
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploading(true);
-    uploadMutation.mutate(file);
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (file) uploadMutation.mutate(file);
+    event.target.value = "";
   };
 
-  const copyToClipboard = (url, id) => {
-    const fullUrl = url.startsWith('http') ? url : `${BACKEND}${url}`;
-    navigator.clipboard.writeText(fullUrl);
-    setCopiedId(id);
-    toast.success('URL copied to clipboard!');
-    setTimeout(() => setCopiedId(null), 2000);
+  // Cleared on unmount / re-copy.
+  useEffect(() => {
+    if (!copiedId) return;
+    const timer = setTimeout(() => setCopiedId(null), 2000);
+    return () => clearTimeout(timer);
+  }, [copiedId]);
+
+  const copyToClipboard = async (url, id) => {
+    try {
+      await navigator.clipboard.writeText(assetUrl(url));
+      setCopiedId(id);
+      toast.success("URL copied");
+    } catch {
+      toast.error("Could not copy to clipboard");
+    }
   };
 
-  const filteredMedia = media.filter(item => 
-    item.filename.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+  const filteredMedia = media
+    // Optional chaining: one entry without a filename used to crash the page.
+    .filter((item) =>
+      item?.filename?.toLowerCase().includes(debouncedSearch.toLowerCase()),
+    )
+    .sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
 
   const formatSize = (bytes) => {
-    if (!bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    if (!bytes) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const index = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${parseFloat((bytes / 1024 ** index).toFixed(2))} ${units[index]}`;
   };
 
   return (
@@ -73,93 +87,122 @@ const MediaPage = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Media Library</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage all your uploaded assets and images.</p>
+          <p className="text-gray-500 text-sm mt-1">
+            Manage your uploaded assets and images.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="relative cursor-pointer">
-            <input 
-              type="file" 
-              className="hidden" 
-              accept="image/*" 
-              onChange={handleFileUpload}
-              disabled={isUploading}
-            />
-            <Button 
-              as="span" 
-              icon={Upload} 
-              loading={isUploading}
-            >
-              Upload Media
-            </Button>
-          </label>
+
+        {/*
+          A real <button> that forwards to a hidden input. The previous markup
+          nested a <button> inside a <label>, which swallowed the click and
+          never opened the file picker.
+        */}
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+            onChange={handleFileUpload}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 hover:bg-primary-500 text-white shadow-lg shadow-primary-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            {uploadMutation.isPending ? (
+              <span
+                aria-hidden="true"
+                className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+              />
+            ) : (
+              <Upload size={14} aria-hidden="true" />
+            )}
+            {uploadMutation.isPending ? "Uploading…" : "Upload media"}
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search filenames..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-900 border border-gray-800 text-sm text-gray-100
-              placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all"
-          />
-        </div>
+      <div className="relative flex-1">
+        <Search
+          size={18}
+          aria-hidden="true"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+        />
+        <input
+          type="search"
+          aria-label="Search media filenames"
+          placeholder="Search filenames..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-900 border border-gray-800 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 transition-all"
+        />
       </div>
+
+      {isError && (
+        <p
+          role="alert"
+          className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
+        >
+          {error.message || "Failed to load media."}
+        </p>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {[...Array(10)].map((_, i) => (
-            <div key={i} className="aspect-square rounded-2xl bg-gray-900 animate-pulse border border-gray-800" />
+          {Array.from({ length: 10 }).map((_, index) => (
+            <div
+              key={index}
+              className="aspect-square rounded-2xl bg-gray-900 animate-pulse border border-gray-800"
+            />
           ))}
         </div>
       ) : filteredMedia.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filteredMedia.map((item) => (
-            <div 
-              key={item.filename} 
+            <figure
+              key={item.filename}
               className="group relative aspect-square rounded-2xl bg-gray-900 border border-gray-800 overflow-hidden hover:border-primary-500/50 transition-all flex flex-col"
             >
               <div className="flex-1 relative overflow-hidden bg-black/20">
-                <img 
-                  src={item.url.startsWith('http') ? item.url : `${BACKEND}${item.url}`} 
+                <img
+                  src={assetUrl(item.url)}
                   alt={item.filename}
+                  loading="lazy"
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'flex';
-                  }}
                 />
-                <div className="absolute inset-0 hidden flex-col items-center justify-center text-gray-600 bg-gray-900">
-                  <ImageIcon size={32} />
-                  <span className="text-[10px] mt-2 uppercase font-bold tracking-tighter">Preview Unavailable</span>
-                </div>
-                
-                {/* Overlay actions */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                   <button 
-                     onClick={() => copyToClipboard(item.url, item.filename)}
-                     className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-sm"
-                     title="Copy URL"
-                   >
-                     {copiedId === item.filename ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}
-                   </button>
-                   <a 
-                     href={item.url.startsWith('http') ? item.url : `${BACKEND}${item.url}`} 
-                     target="_blank" 
-                     rel="noreferrer"
-                     className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-sm"
-                     title="Open Original"
-                   >
-                     <ExternalLink size={18} />
-                   </a>
+
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(item.url, item.filename)}
+                    aria-label={`Copy URL for ${item.filename}`}
+                    className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-sm"
+                  >
+                    {copiedId === item.filename ? (
+                      <Check size={18} className="text-green-400" aria-hidden="true" />
+                    ) : (
+                      <Copy size={18} aria-hidden="true" />
+                    )}
+                  </button>
+                  <a
+                    href={assetUrl(item.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${item.filename} in a new tab`}
+                    className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all backdrop-blur-sm"
+                  >
+                    <ExternalLink size={18} aria-hidden="true" />
+                  </a>
                 </div>
               </div>
-              
-              <div className="p-3 bg-gray-900 border-t border-gray-800">
-                <p className="text-[11px] font-medium text-gray-300 truncate" title={item.filename}>
+
+              <figcaption className="p-3 bg-gray-900 border-t border-gray-800">
+                <p
+                  className="text-[11px] font-medium text-gray-300 truncate"
+                  title={item.filename}
+                >
                   {item.filename}
                 </p>
                 <div className="flex items-center justify-between mt-1">
@@ -170,18 +213,18 @@ const MediaPage = () => {
                     {new Date(item.mtime).toLocaleDateString()}
                   </span>
                 </div>
-              </div>
-            </div>
+              </figcaption>
+            </figure>
           ))}
         </div>
       ) : (
         <div className="py-20 text-center border-2 border-dashed border-gray-800 rounded-3xl">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gray-900 mb-4 border border-gray-800">
-            <ImageIcon className="text-gray-600" size={32} />
+            <ImageIcon className="text-gray-600" size={32} aria-hidden="true" />
           </div>
-          <h3 className="text-lg font-bold text-white">No media found</h3>
+          <h2 className="text-lg font-bold text-white">No media found</h2>
           <p className="text-gray-500 text-sm max-w-xs mx-auto mt-2">
-            Try searching for something else or upload a new asset to get started.
+            Upload an asset to get started.
           </p>
         </div>
       )}

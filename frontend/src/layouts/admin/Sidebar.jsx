@@ -8,14 +8,31 @@ import {
 } from "lucide-react";
 import { useUIStore } from "@/store/uiStore";
 import { useAuthStore } from "@/store/authStore";
-import { canAccess } from "@/utils/permissions";
 
-/* Navigation items — each may have a required permission */
+/*
+ * Each item declares the permission the backend enforces for that section, so
+ * the nav can never offer a link that would 403 on arrival.
+ */
 const NAV_ITEMS = [
-  { path: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: null },
+  {
+    path: "/admin/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    permission: null,
+  },
   { path: "/admin/users", label: "Users", icon: Users, permission: "user.view" },
-  { path: "/admin/media", label: "Media Library", icon: ImageIcon, permission: null },
-  { path: "/admin/settings", label: "Settings", icon: Settings, permission: null },
+  {
+    path: "/admin/media",
+    label: "Media Library",
+    icon: ImageIcon,
+    permission: "upload.view",
+  },
+  {
+    path: "/admin/settings",
+    label: "Settings",
+    icon: Settings,
+    permission: "settings.view",
+  },
 ];
 
 const Sidebar = () => {
@@ -25,8 +42,7 @@ const Sidebar = () => {
   // Filter nav items based on user's permissions
   const visibleItems = NAV_ITEMS.filter(
     (item) =>
-      item.permission === null ||
-      (permissions && permissions.includes(item.permission)),
+      item.permission === null || (permissions && permissions.includes(item.permission)),
   );
 
   return (
@@ -44,13 +60,9 @@ const Sidebar = () => {
             <Zap size={16} className="text-white" />
           </div> */}
           {sidebarOpen ? (
-            <span className="font-bold text-white tracking-wide truncate">
-              Admin CMS
-            </span>
+            <span className="font-bold text-white tracking-wide truncate">Admin CMS</span>
           ) : (
-            <span className="font-bold text-white tracking-wide truncate">
-              AC
-            </span>
+            <span className="font-bold text-white tracking-wide truncate">AC</span>
           )}
         </div>
       </div>

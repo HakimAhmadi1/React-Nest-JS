@@ -1,6 +1,6 @@
-import { AlertTriangle } from 'lucide-react';
-import Button from './Button';
-import Modal from './Modal';
+import { AlertTriangle } from "lucide-react";
+import Button from "./Button";
+import Modal from "./Modal";
 
 /**
  * ConfirmDialog - wraps Modal for simple yes/no delete/action confirmations.
@@ -10,9 +10,9 @@ const ConfirmDialog = ({
   isOpen,
   onClose,
   onConfirm,
-  title = 'Are you sure?',
-  message = 'This action cannot be undone.',
-  confirmLabel = 'Delete',
+  title = "Are you sure?",
+  message = "This action cannot be undone.",
+  confirmLabel = "Delete",
   loading = false,
 }) => (
   <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
@@ -22,10 +22,20 @@ const ConfirmDialog = ({
       </div>
       <p className="text-sm text-gray-400">{message}</p>
       <div className="flex gap-3 w-full">
-        <Button variant="secondary" className="flex-1" onClick={onClose} disabled={loading}>
+        <Button
+          variant="secondary"
+          className="flex-1"
+          onClick={onClose}
+          disabled={loading}
+        >
           Cancel
         </Button>
-        <Button variant="danger" className="flex-1 !bg-red-600 !text-white hover:!bg-red-500" onClick={onConfirm} loading={loading}>
+        <Button
+          variant="danger"
+          className="flex-1 !bg-red-600 !text-white hover:!bg-red-500"
+          onClick={onConfirm}
+          loading={loading}
+        >
           {confirmLabel}
         </Button>
       </div>

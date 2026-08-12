@@ -1,61 +1,35 @@
 import 'reflect-metadata';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { Module, Global } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { SeederService } from './utils/databases/seeder.service';
-import * as Entities from './utils/databases/schema/entities';
-import { SUBSCRIBERS } from './utils/databases/schema/subscribers';
-import { INDEX_POS_ADMIN_CONN } from './utils/databases/constants';
-import { Users } from './utils/databases/schema/entities/users';
-import { SystemSettings } from './utils/databases/schema/entities/system-settings';
+import { SeederModule } from '@database/seeds/seeder.module';
+import { SeederService } from '@database/seeds/seeder.service';
 
-const dbEntities = Object.values(Entities);
-
-@Global()
-@Module({
-  imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
-    }),
-    TypeOrmModule.forRootAsync({
-      name: INDEX_POS_ADMIN_CONN,
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'mysql',
-        host: configService.get<string>('DATABASE_HOST'),
-        port: configService.get<number>('DATABASE_PORT'),
-        username: configService.get<string>('DATABASE_USER'),
-        password: configService.get<string>('DATABASE_PASS'),
-        database: configService.get<string>('DATABASE_NAME'),
-        entities: [...dbEntities],
-        synchronize: configService.get<string>('DATABASE_SYNC') === 'true',
-        timezone: 'Z',
-        subscribers: [...SUBSCRIBERS],
-      }),
-    }),
-    TypeOrmModule.forFeature([Users, SystemSettings], INDEX_POS_ADMIN_CONN),
-  ],
-  providers: [SeederService],
-  exports: [SeederService],
-})
-class SeederAppModule {}
-
-async function runSeeder() {
-  const app = await NestFactory.createApplicationContext(SeederAppModule, {
-    logger: ['log', 'error', 'warn'],
+/**
+ * Run AFTER migrations: `npm run migration:run && npm run seed`.
+ */
+async function run() {
+  const logger = new Logger('Seed');
+  const app = await NestFactory.createApplicationContext(SeederModule, {
+    logger: ['error', 'warn', 'log'],
   });
 
-  const seeder = app.get(SeederService);
-  await seeder.seed();
+  try {
+    await app.get(SeederService).seed();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/doesn't exist|Unknown table|no such table/i.test(message)) {
+      logger.error(
+        'Seeding failed because the schema is missing. Run `npm run migration:run` first.',
+      );
+    } else {
+      logger.error(`Seeding failed: ${message}`);
+    }
+    await app.close();
+    process.exit(1);
+  }
 
   await app.close();
   process.exit(0);
 }
 
-runSeeder().catch((err) => {
-  console.error('Seeder failed:', err);
-  process.exit(1);
-});
+void run();

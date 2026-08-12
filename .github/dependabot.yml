@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      nestjs:
+        patterns: ['@nestjs/*']
+      types:
+        patterns: ['@types/*']
+      dev-tooling:
+        patterns: ['eslint*', 'prettier', 'jest', 'ts-*', 'typescript*']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns: ['react', 'react-dom', 'react-router*']
+      dev-tooling:
+        patterns: ['eslint*', 'prettier', 'vite*', 'vitest', '@testing-library/*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: monthly

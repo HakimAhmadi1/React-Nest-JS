@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { Plus, Edit2, Trash2, Search } from "lucide-react";
-import { getApi, postApi, putApi, deleteApi } from "@/services/api";
-import { canAccess } from "@/utils/permissions";
+import { Edit2, Plus, Search, Trash2 } from "lucide-react";
+import { deleteApi, getApi, postApi, putApi } from "@/services/api";
+import { useCanAccess } from "@/utils/permissions";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
-
 import Badge from "@/components/ui/Badge";
 import Table from "@/components/ui/Table";
 
@@ -20,48 +20,73 @@ const CMS_ROLES = [
   { id: "SUBSCRIBER", name: "Subscriber" },
 ];
 
+const PAGE_SIZE = 10;
+
 const UsersPage = () => {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const limit = 10;
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  // One request per pause, not per keystroke.
+  const debouncedSearch = useDebouncedValue(search, 300);
 
-  /* API returns { success, data: { data: [...], total: N } } */
-  const { data: res, isLoading } = useQuery({
-    queryKey: ["users", search, page],
-    queryFn: async () => {
-      const response = await getApi("admin/users", { search, limit, offset: (page - 1) * limit });
-      return response.data;
-    },
+  // Reset paging at the source of the change rather than in an effect that
+  // reacts to it afterwards. Without this, searching from page 3 keeps
+  // offset=20 and the results look empty.
+  const handleSearchChange = (event) => {
+    setSearch(event.target.value);
+    setPage(1);
+  };
+
+  const canEdit = useCanAccess("user.edit");
+  const canDelete = useCanAccess("user.delete");
+  const canCreate = useCanAccess("user.create");
+
+  // The response interceptor already unwraps the envelope, so this is the
+  // { data, total } payload directly.
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["users", debouncedSearch, page],
+    queryFn: () =>
+      getApi("admin/users", {
+        search: debouncedSearch || undefined,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      }),
+    placeholderData: (previous) => previous,
   });
+
+  const users = data?.data ?? [];
+  const total = data?.total ?? 0;
 
   const deleteMutation = useMutation({
     mutationFn: (id) => deleteApi(`admin/users/${id}`),
     onSuccess: () => {
+      toast.success("User deleted");
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setDeleteTarget(null);
     },
+    // Now actually reachable: apiRequest throws instead of resolving with
+    // { success: false }, which used to make every failure look like a success.
+    onError: (err) => toast.error(err.message || "Delete failed"),
   });
 
   const upsertMutation = useMutation({
-    mutationFn: (formData) =>
+    mutationFn: (payload) =>
       selectedUser
-        ? putApi(`admin/users/${selectedUser.id}`, formData)
-        : postApi("admin/users", formData),
+        ? putApi(`admin/users/${selectedUser.id}`, payload)
+        : postApi("admin/users", payload),
     onSuccess: () => {
-      toast.success(selectedUser ? "User updated!" : "User created!");
+      toast.success(selectedUser ? "User updated" : "User created");
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setModalOpen(false);
       setSelectedUser(null);
     },
-    onError: (err) => {
-      toast.error(`Error: ${err.message || "Action failed"}`);
-    },
+    onError: (err) => toast.error(err.message || "Save failed"),
   });
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const columns = [
     {
@@ -87,7 +112,7 @@ const UsersPage = () => {
     {
       key: "role",
       label: "Role",
-      render: (r) => <Badge variant="info">{r.role || "user"}</Badge>,
+      render: (r) => <Badge variant="info">{r.role || "SUBSCRIBER"}</Badge>,
     },
     {
       key: "status",
@@ -103,22 +128,24 @@ const UsersPage = () => {
       label: "Actions",
       render: (r) => (
         <div className="flex items-center gap-1">
-          {canAccess("user.edit") && (
+          {canEdit && (
             <Button
               variant="ghost"
               size="sm"
               icon={Edit2}
+              aria-label={`Edit ${r.name}`}
               onClick={() => {
                 setSelectedUser(r);
                 setModalOpen(true);
               }}
             />
           )}
-          {canAccess("user.delete") && (
+          {canDelete && (
             <Button
               variant="danger"
               size="sm"
               icon={Trash2}
+              aria-label={`Delete ${r.name}`}
               onClick={() => setDeleteTarget(r)}
             />
           )}
@@ -127,27 +154,21 @@ const UsersPage = () => {
     },
   ];
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const payload = Object.fromEntries(formData.entries());
-    // Don't submit empty password on edit
-    if (selectedUser && !payload.password) delete payload.password;
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const form = Object.fromEntries(new FormData(event.target).entries());
+
+    const payload = {
+      name: form.name,
+      email: form.email,
+      role: form.role,
+    };
+    // Only send a password when one was actually entered; the backend rejects
+    // an empty string.
+    if (form.password) payload.password = form.password;
+
     upsertMutation.mutate(payload);
   };
-
-  const users = Array.isArray(res?.data)
-    ? res.data
-    : Array.isArray(res)
-      ? res
-      : [];
-  const total = res?.total ?? users.length;
-
-  const filtered = users.filter(
-    (u) =>
-      u.name?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase()),
-  );
 
   return (
     <div className="space-y-5">
@@ -156,7 +177,7 @@ const UsersPage = () => {
           <h1 className="text-2xl font-bold text-white">Users</h1>
           <p className="text-gray-500 text-sm mt-1">{total} total accounts.</p>
         </div>
-        {canAccess("user.create") && (
+        {canCreate && (
           <Button
             icon={Plus}
             onClick={() => {
@@ -174,17 +195,27 @@ const UsersPage = () => {
           <Search
             size={16}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+            aria-hidden="true"
           />
           <input
-            type="text"
+            type="search"
+            aria-label="Search users by name or email"
             placeholder="Search name or email..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-100
-              focus:outline-none focus:ring-2 focus:ring-primary-500"
+            onChange={handleSearchChange}
+            className="w-full pl-9 pr-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
       </div>
+
+      {isError && (
+        <p
+          role="alert"
+          className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
+        >
+          {error.message || "Failed to load users."}
+        </p>
+      )}
 
       <Table
         columns={columns}
@@ -193,11 +224,10 @@ const UsersPage = () => {
         emptyMessage="No users found."
         currentPage={page}
         totalItems={total}
-        pageSize={limit}
-        onPageChange={(p) => setPage(p)}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
       />
 
-      {/* User Form Modal */}
       <Modal
         isOpen={modalOpen}
         onClose={() => {
@@ -207,12 +237,7 @@ const UsersPage = () => {
         title={selectedUser ? "Edit User" : "Add New User"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Name"
-            name="name"
-            defaultValue={selectedUser?.name}
-            required
-          />
+          <Input label="Name" name="name" defaultValue={selectedUser?.name} required />
           <Input
             label="Email"
             name="email"
@@ -221,19 +246,20 @@ const UsersPage = () => {
             required
           />
           <Input
-            label={
-              selectedUser ? "New Password (leave blank to keep)" : "Password"
-            }
+            label={selectedUser ? "New password (leave blank to keep)" : "Password"}
             name="password"
             type="password"
             required={!selectedUser}
+            minLength={8}
+            hint="At least 8 characters, with an uppercase letter, a lowercase letter and a digit."
           />
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-gray-300">
-              Account Role
+            <label htmlFor="user-role" className="text-sm font-medium text-gray-300">
+              Account role
             </label>
             <select
+              id="user-role"
               name="role"
               defaultValue={selectedUser?.role || "SUBSCRIBER"}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 text-gray-100 text-sm px-3 py-2"
@@ -247,7 +273,10 @@ const UsersPage = () => {
           </div>
 
           {upsertMutation.isError && (
-            <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            <p
+              role="alert"
+              className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
+            >
               {upsertMutation.error?.message || "Something went wrong."}
             </p>
           )}
@@ -264,11 +293,7 @@ const UsersPage = () => {
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              loading={upsertMutation.isPending}
-            >
+            <Button type="submit" className="flex-1" loading={upsertMutation.isPending}>
               {selectedUser ? "Update" : "Create"}
             </Button>
           </div>
@@ -276,12 +301,12 @@ const UsersPage = () => {
       </Modal>
 
       <ConfirmDialog
-        isOpen={!!deleteTarget}
+        isOpen={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteMutation.mutate(deleteTarget?.id)}
         loading={deleteMutation.isPending}
-        title="Delete User"
-        message={`Are you sure you want to delete ${deleteTarget?.name}? This action is permanent.`}
+        title="Delete user"
+        message={`Delete ${deleteTarget?.name}? Their sessions will be revoked immediately.`}
       />
     </div>
   );

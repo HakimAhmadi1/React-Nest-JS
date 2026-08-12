@@ -1,6 +1,24 @@
 @import "tailwindcss";
 
 @theme {
+  /*
+   * `primary-*` is referenced ~28 times across Button, Badge, Table, Sidebar,
+   * Topbar and the dashboard, but Tailwind v4 ships no built-in `primary`
+   * palette — so every one of those classes compiled to nothing and the admin
+   * UI rendered unstyled. This is that palette.
+   */
+  --color-primary-50: #eef4ff;
+  --color-primary-100: #d9e5ff;
+  --color-primary-200: #bcd2ff;
+  --color-primary-300: #8eb4ff;
+  --color-primary-400: #598aff;
+  --color-primary-500: #3361ff;
+  --color-primary-600: #1f3ff5;
+  --color-primary-700: #182ee1;
+  --color-primary-800: #1a28b6;
+  --color-primary-900: #1b298f;
+  --color-primary-950: #141b57;
+
   --color-brand-bg: #000000;
   --color-brand-surface: #111111;
   --color-brand-card: #1a1a1a;
@@ -9,10 +27,9 @@
   --color-brand-border: #333333;
   --color-brand-offwhite: #e8e8e8;
   --color-brand-sale: #cc0000;
-  
-  --font-sans: 'Inter', system-ui, sans-serif;
-  
-  /* Remove rounded corners for sharp athletic aesthetic */
+
+  --font-sans: "Inter", system-ui, sans-serif;
+
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 0px;
@@ -22,16 +39,76 @@
 
 @layer base {
   body {
-    background-color: var(--color-brand-bg);
-    color: var(--color-brand-text);
+    background-color: #ffffff;
+    color: #0a0a0a;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Visible keyboard focus everywhere, not just where a component adds it. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
 }
 
-/* Custom Premium Animations */
+@layer components {
+  /*
+   * Referenced by the admin pages but never defined, so admin tables had no
+   * cell padding and cards had no surface at all.
+   */
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .admin-table th {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .card {
+    background-color: var(--color-gray-900);
+    border: 1px solid var(--color-gray-800);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+  }
+}
+
 @layer utilities {
+  .sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-gray-700) transparent;
+  }
+
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--color-gray-700);
+    border-radius: 9999px;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .animate-in {
     animation-duration: 0.7s;
     animation-fill-mode: both;
@@ -46,22 +123,61 @@
     animation-name: slideInFromBottom;
   }
 
+  .slide-in-from-top-4 {
+    animation-name: slideInFromTop;
+  }
+
   .slide-in-from-left-4 {
-      animation-name: slideInFromLeft;
+    animation-name: slideInFromLeft;
   }
 
   @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   @keyframes slideInFromBottom {
-    from { transform: translateY(1rem); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+    from {
+      transform: translateY(1rem);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideInFromTop {
+    from {
+      transform: translateY(-1rem);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
 
   @keyframes slideInFromLeft {
-    from { transform: translateX(-1rem); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
+    from {
+      transform: translateX(-1rem);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Respect the OS "reduce motion" setting. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-in,
+    .animate-spin {
+      animation: none !important;
+    }
   }
 }

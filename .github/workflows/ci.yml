@@ -2,41 +2,155 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+
+# A new push supersedes an in-flight run for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
 
 jobs:
-  backend-lint-build:
+  backend:
+    name: Backend (lint, build, test)
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
-      - name: Install Dependencies
-        run: cd backend && npm ci
-      - name: Lint
-        run: cd backend && npm run lint
-      - name: Build
-        run: cd backend && npm run build
 
-  frontend-lint-build:
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      PORT: 3003
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: root
+      DATABASE_PASS: root_password
+      DATABASE_NAME: app_test
+      # 48 chars: env validation enforces a 32-character minimum.
+      JWT_SECRET: ci_test_secret_value_that_is_long_enough_000000
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_ISSUER: fullstack-boilerplate
+      JWT_AUDIENCE: fullstack-boilerplate-client
+      ALLOWED_ORIGINS: http://localhost:5173
+      APP_URL: http://localhost:5173
+      COOKIE_SECURE: 'false'
+      COOKIE_SAMESITE: lax
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # No --legacy-peer-deps: the dependency tree resolves cleanly now.
+      - name: Install
+        working-directory: backend
+        run: npm ci
+
+      # `lint` no longer carries --fix, so it can actually fail the build
+      # instead of silently rewriting files in the runner.
+      - name: Lint
+        working-directory: backend
+        run: npm run lint
+
+      - name: Format check
+        working-directory: backend
+        run: npm run format:check
+
+      - name: Build
+        working-directory: backend
+        run: npm run build
+
+      - name: Unit tests
+        working-directory: backend
+        run: npm test -- --ci --coverage
+
+      - name: Run migrations
+        working-directory: backend
+        run: npm run migration:run
+
+      - name: E2E tests
+        working-directory: backend
+        run: npm run test:e2e
+
+  frontend:
+    name: Frontend (lint, build, test)
+    runs-on: ubuntu-latest
+
+    env:
+      VITE_API_URL: http://localhost:3003/api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Format check
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  docker:
+    name: Docker images build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install Dependencies
-        run: cd frontend && npm ci
-      - name: Lint
-        run: cd frontend && npm run lint
-      - name: Build
-        run: cd frontend && npm run build
+          context: ./backend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

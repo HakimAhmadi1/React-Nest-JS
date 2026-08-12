@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 const TableSkeleton = ({ rows = 5, columns = 4 }) => {
   return (

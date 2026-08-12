@@ -1,111 +1,89 @@
 import 'reflect-metadata';
-import {
-  ClassSerializerInterceptor,
-  HttpStatus,
-  Logger,
-  ValidationPipe,
-} from '@nestjs/common';
-import { NestFactory, Reflector } from '@nestjs/core';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './utils/filters/src/index';
+import { Logger } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import { AppModule } from './app.module';
+
+const GLOBAL_PREFIX = 'api';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const globalPrefix = 'api';
+  const logger = new Logger('Bootstrap');
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
-  app.setGlobalPrefix(globalPrefix);
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      errorHttpStatusCode: HttpStatus.BAD_REQUEST,
+  app.setGlobalPrefix(GLOBAL_PREFIX);
+
+  app.use(
+    helmet({
+      // /uploads/* is fetched by the frontend on a different port.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      // Swagger UI is inline-script heavy; helmet's default CSP blanks it out.
+      contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
     }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter());
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  app.use(cookieParser());
+
+  // Explicit, and ordered ahead of the router because `bodyParser: false`.
+  app.use(json({ limit: '5mb' }));
+  app.use(urlencoded({ extended: true, limit: '5mb' }));
+
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: process.env.CORS_ALLOWED_ORIGINS
-      ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-      : ['http://localhost:5173'],
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    // Required for the httpOnly refresh cookie to be sent cross-origin.
     credentials: true,
   });
 
-  app.use(json({ limit: '50mb' }));
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Full-Stack Boilerplate API')
+      .setDescription('REST API for the NestJS + React boilerplate')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addCookieAuth('refresh_token')
+      .build();
 
-  const config = new DocumentBuilder()
-    .setTitle('Index POS Standalone')
-    .setDescription('APIs Documentation')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
-
-  const port = process.env.PORT || 3000;
-
-  // Root health-check route (bypasses globalPrefix)
-  app.getHttpAdapter().get('/', (_req: any, res: any) => {
-    res.json({ message: 'API is working', status: 'ok' });
-  });
-
-  console.log('CORS_ALLOWED_ORIGINS:', process.env.CORS_ALLOWED_ORIGINS);
-
-  await app.listen(port, '0.0.0.0');
-
-  console.log('App running -------------- ');
-
-  Logger.log(
-    `🚀 Application is running on: http://localhost:${port}/${globalPrefix}`,
-  );
-  Logger.log(
-    `🚀 Swagger is running on: http://localhost:${port}/${globalPrefix}/docs`,
-  );
-}
-
-let cachedApp: any;
-
-export default async function handler(req: any, res: any) {
-  if (!cachedApp) {
-    const app = await NestFactory.create(AppModule);
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        transform: true,
-        errorHttpStatusCode: HttpStatus.BAD_REQUEST,
-      }),
+    SwaggerModule.setup(
+      `${GLOBAL_PREFIX}/docs`,
+      app,
+      SwaggerModule.createDocument(app, config),
+      { swaggerOptions: { persistAuthorization: true } },
     );
-    app.useGlobalFilters(new GlobalExceptionFilter());
-    app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
-    app.enableCors({
-      origin: process.env.CORS_ALLOWED_ORIGINS
-        ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-        : ['http://localhost:5173'],
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-      credentials: true,
-    });
-
-    app.use(json({ limit: '50mb' }));
-    app.use(urlencoded({ extended: true, limit: '50mb' }));
-
-    await app.init();
-    cachedApp = app.getHttpAdapter().getInstance();
   }
 
-  return cachedApp(req, res);
+  // Lets TypeORM close its pool and in-flight requests drain on SIGTERM.
+  app.enableShutdownHooks();
+
+  const port = process.env.PORT ?? 3003;
+  await app.listen(port, '0.0.0.0');
+
+  logger.log(`Application listening on http://localhost:${port}/${GLOBAL_PREFIX}`);
+  if (process.env.NODE_ENV !== 'production') {
+    logger.log(`Swagger UI at http://localhost:${port}/${GLOBAL_PREFIX}/docs`);
+  }
 }
 
-if (process.env.NODE_ENV !== 'production') {
-  bootstrap();
-}
-
-process.on('uncaughtException', (err) => {
-  Logger.error('Uncaught Exception:', err);
-});
+/*
+ * Called unconditionally. The previous version wrapped this in
+ * `if (process.env.NODE_ENV !== 'production')`, so `npm run start:prod`
+ * loaded the module and exited without ever listening.
+ */
+void bootstrap();
 
 process.on('unhandledRejection', (reason) => {
-  Logger.error('Unhandled Rejection:', reason);
+  Logger.error(`Unhandled rejection: ${reason}`, undefined, 'Process');
+});
+
+process.on('uncaughtException', (error) => {
+  // The process state is undefined after this point; exit and let the
+  // supervisor restart rather than serving traffic from a broken runtime.
+  Logger.error(`Uncaught exception: ${error.message}`, error.stack, 'Process');
+  process.exit(1);
 });

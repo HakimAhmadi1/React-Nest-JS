@@ -1,25 +1,22 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { User, ShoppingBag, MapPin, LogOut, ChevronRight } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { User, LogOut, ChevronRight } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 const AccountLayout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
   };
 
-  const navItems = [
-    { name: "Profile", path: "/account/profile", icon: User },
-  ];
+  const navItems = [{ name: "Profile", path: "/account/profile", icon: User }];
 
   return (
     <div className="min-h-screen bg-[#F0F0F0]">
       <div className="max-w-[1600px] mx-auto px-6 lg:px-12 py-12">
-
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-10">
           {/* Sidebar - Floating Architectural Design */}
           <aside className="w-full lg:w-60 shrink-0">
@@ -38,14 +35,18 @@ const AccountLayout = () => {
                   <div className="flex items-center gap-3 lg:gap-4">
                     <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full bg-black flex items-center justify-center text-white text-xl lg:text-2xl font-black ring-4 ring-white shadow-2xl shrink-0 overflow-hidden">
                       {user?.avatar ? (
-                        <img src={user.avatar} alt="Profile" className="w-full h-full object-cover" />
+                        <img
+                          src={user.avatar}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
-                        user?.first_name?.charAt(0) || "U"
+                        user?.name?.charAt(0) || "U"
                       )}
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-sm lg:text-base font-black text-black leading-none mb-1 uppercase tracking-tight truncate">
-                        {user?.first_name} {user?.last_name}
+                        {user?.name}
                       </h3>
                       <p className="text-[8px] lg:text-[9px] text-gray-500 font-bold uppercase tracking-widest truncate">
                         {user?.email}

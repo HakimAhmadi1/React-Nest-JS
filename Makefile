@@ -1,51 +1,68 @@
-.PHONY: help install install-backend install-frontend run-backend run-frontend build-backend docker-up docker-down docker-build
+.PHONY: help install dev dev-backend dev-frontend build lint test test-e2e \
+        migrate seed docker-up docker-down docker-build clean
 
 help:
-	@echo "Available commands:"
-	@echo "  make install         - Install dependencies for all components"
-	@echo "  make build-backend   - Build the NestJS backend"
-	@echo "  make run-backend     - Run NestJS backend in dev mode"
-	@echo "  make run-frontend    - Run Frontend in dev mode"
-	@echo "  make docker-up       - Start services with Docker"
-	@echo "  make docker-down     - Stop Docker services"
-	@echo "  make docker-build    - Rebuild Docker images and start services"
+	@echo "Setup"
+	@echo "  make install        Install dependencies for both apps"
+	@echo "  make migrate        Run database migrations"
+	@echo "  make seed           Seed the database (run after migrate)"
+	@echo ""
+	@echo "Development"
+	@echo "  make dev            Run backend and frontend together"
+	@echo "  make dev-backend    Run NestJS in watch mode"
+	@echo "  make dev-frontend   Run the Vite dev server"
+	@echo ""
+	@echo "Quality"
+	@echo "  make lint           Lint both apps"
+	@echo "  make test           Unit tests for both apps"
+	@echo "  make test-e2e       Backend e2e tests (needs a database)"
+	@echo "  make build          Production build of both apps"
+	@echo ""
+	@echo "Docker"
+	@echo "  make docker-up      Start db + api + web"
+	@echo "  make docker-down    Stop everything"
+	@echo "  make docker-build   Rebuild images and start"
 
-env ?= development
+# --legacy-peer-deps is gone: the dependency tree resolves cleanly.
+install:
+	npm install
 
-env.set:
-	@if [ ! -f .config/backend/environments/.env.$(env) ] || [ ! -f .config/frontend/environments/.env.$(env) ]; then \
-	  echo "\033[1;32mMissing environment file: .env.$(env).\033[0m"; \
-	  exit 1; \
-	fi
-	cp .config/backend/environments/.env.$(env) ./backend/.env
-	cp .config/frontend/environments/.env.$(env) ./frontend/.env
-	@echo "\033[1;32m$(env) environment variables are set for both components.\033[0m"
+dev:
+	npm run dev
 
-install: install-backend install-frontend
+dev-backend:
+	npm run dev:backend
 
-install-backend:
-	cd backend && npm install --legacy-peer-deps
+dev-frontend:
+	npm run dev:frontend
 
-install-frontend:
-	cd frontend && npm install --legacy-peer-deps
+build:
+	npm run build
 
-run-backend:
-	cd backend && npm run start:dev
+lint:
+	npm run lint
 
-run-frontend:
-	cd frontend && npm run dev -- --host
+test:
+	npm test
 
-build-backend:
-	cd backend && npm run build
+test-e2e:
+	npm run test:e2e
 
+migrate:
+	npm run migration:run
+
+seed:
+	npm run seed
+
+# Compose lives at the repo root now, so these work from here.
 docker-up:
-	docker-compose up
+	docker compose up -d
 
 docker-down:
-	docker-compose down
+	docker compose down
 
 docker-build:
-	docker-compose up --build
+	docker compose up --build -d
 
-run-all:
-	(make run-backend) & (make run-frontend)
+clean:
+	rm -rf backend/dist backend/coverage frontend/dist frontend/coverage

@@ -1,60 +1,87 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 /**
- * Auth Store - manages user session, roles, and permissions.
- * Persisted to localStorage so sessions survive page refresh.
+ * The single source of truth for the session.
+ *
+ * There used to be two — this store plus an AuthContext writing to a separate
+ * `user` localStorage key. They drifted constantly, which is why signing out
+ * only cleared one of them and the app immediately rehydrated the dead session.
+ *
+ * The access token is held IN MEMORY ONLY. The refresh token lives in an
+ * httpOnly cookie that JavaScript cannot read, so a persisted copy of the
+ * access token would be pure XSS surface with no benefit.
  */
 export const useAuthStore = create(
   persist(
     (set, get) => ({
-      /* ── state ── */
-      user: null,        // { id, name, email, avatar }
-      token: null,       // JWT access token
-      roles: [],         // e.g. ['admin', 'editor']
-      permissions: [],   // e.g. ['product.create', 'order.view']
-      isAuthenticated: false,
+      user: null,
+      roles: [],
+      permissions: [],
+      accessToken: null,
+      /** True until the initial refresh attempt settles. */
+      bootstrapping: true,
 
-      /* ── actions ── */
-      login: (payload) => {
-        // payload = { user, token, roles, permissions }
+      isAuthenticated: () => Boolean(get().accessToken),
+
+      setAccessToken: (accessToken) => set({ accessToken }),
+
+      setSession: ({ user, roles, permissions, accessToken }) =>
         set({
-          user: payload.user,
-          token: payload.token,
-          roles: payload.roles ?? [],
-          permissions: payload.permissions ?? [],
-          isAuthenticated: true,
-        });
-      },
+          user,
+          roles: roles ?? [],
+          permissions: permissions ?? [],
+          accessToken,
+          bootstrapping: false,
+        }),
 
-      logout: () => {
+      updateUser: (fields) =>
+        set((state) => ({
+          user: state.user ? { ...state.user, ...fields } : state.user,
+        })),
+
+      /** Local-only teardown. Use `logout()` from useAuth to also tell the server. */
+      clearSession: () =>
         set({
           user: null,
-          token: null,
           roles: [],
           permissions: [],
-          isAuthenticated: false,
-        });
+          accessToken: null,
+          bootstrapping: false,
+        }),
+
+      setBootstrapping: (bootstrapping) => set({ bootstrapping }),
+
+      hasRole: (role) => {
+        const roles = get().roles;
+        return Array.isArray(role)
+          ? role.some((r) => roles.includes(r))
+          : roles.includes(role);
       },
 
-      /** Update permissions after role change on the server */
-      setPermissions: (permissions) => set({ permissions }),
-
-      /** Quick helper to check one permission */
-      hasPermission: (perm) => get().permissions.includes(perm),
-
-      /** Check if user has at least one of the given roles */
-      hasRole: (role) => get().roles.includes(role),
+      hasPermission: (permission) => {
+        const permissions = get().permissions;
+        return Array.isArray(permission)
+          ? permission.some((p) => permissions.includes(p))
+          : permissions.includes(permission);
+      },
     }),
     {
-      name: 'auth-storage',         // localStorage key
-      partialize: (state) => ({   // only persist these fields
+      name: "auth-storage",
+      // `accessToken` is intentionally absent: it is re-obtained on load by
+      // exchanging the refresh cookie. The rest is cached so the shell can
+      // paint immediately instead of flashing a signed-out state.
+      partialize: (state) => ({
         user: state.user,
-        token: state.token,
         roles: state.roles,
         permissions: state.permissions,
-        isAuthenticated: state.isAuthenticated,
       }),
-    }
-  )
+    },
+  ),
 );
+
+/* ── Selector hooks (reactive, unlike the old getState() helpers) ─────── */
+
+export const useUser = () => useAuthStore((s) => s.user);
+export const useIsAuthenticated = () => useAuthStore((s) => Boolean(s.accessToken));
+export const useIsBootstrapping = () => useAuthStore((s) => s.bootstrapping);

@@ -1,38 +1,31 @@
-import { useAuthStore } from '@/store/authStore';
+import { useAuthStore } from "@/store/authStore";
 
-/**
- * canAccess(permission)
- * Returns true if the current user has the given permission string.
+/** Roles allowed into the admin portal. Mirrors the backend's ADMIN_ROLES. */
+export const ADMIN_ROLES = ["SUPER_ADMIN", "ADMIN", "EDITOR", "SUPPORT"];
+
+const matches = (list, wanted) =>
+  Array.isArray(wanted) ? wanted.some((w) => list.includes(w)) : list.includes(wanted);
+
+/*
+ * Hooks, not getState() snapshots.
  *
- * Usage:
- *   canAccess('product.create')  → true | false
- *   canAccess(['product.edit', 'product.delete'])  → true if any match
+ * The previous helpers read useAuthStore.getState() at call time with no
+ * subscription, so admin links and action buttons could stay hidden after
+ * sign-in until some unrelated state change forced a re-render.
  */
-export function canAccess(permission) {
-  const permissions = useAuthStore.getState().permissions || [];
 
-  if (Array.isArray(permission)) {
-    return permission.some((p) => permissions.includes(p));
-  }
-  return permissions.includes(permission);
-}
+export const useCanAccess = (permission) =>
+  useAuthStore((s) => matches(s.permissions, permission));
 
-/**
- * hasRole(role)
- * Returns true if the user has the given role.
- */
-export function hasRole(role) {
-  const roles = useAuthStore.getState().roles || [];
-  if (Array.isArray(role)) {
-    return role.some((r) => roles.includes(r));
-  }
-  return roles.includes(role);
-}
+export const useHasRole = (role) => useAuthStore((s) => matches(s.roles, role));
 
-/**
- * isAdmin()
- * Quick check if current user is an admin.
- */
-export function isAdmin() {
-  return hasRole('ADMIN') || hasRole('SUPER_ADMIN');
-}
+/** The single definition of "is an admin" — there were four, and they disagreed. */
+export const useIsAdmin = () => useAuthStore((s) => matches(s.roles, ADMIN_ROLES));
+
+/* Non-reactive variants, for use outside React (event handlers, guards). */
+export const canAccess = (permission) =>
+  matches(useAuthStore.getState().permissions, permission);
+
+export const hasRole = (role) => matches(useAuthStore.getState().roles, role);
+
+export const isAdmin = () => matches(useAuthStore.getState().roles, ADMIN_ROLES);

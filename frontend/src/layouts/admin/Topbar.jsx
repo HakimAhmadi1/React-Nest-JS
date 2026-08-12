@@ -1,21 +1,29 @@
-import { Bell, Menu, LogOut, User } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@/store/authStore';
-import { useUIStore } from '@/store/uiStore';
+import { Bell, Menu, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { useUIStore } from "@/store/uiStore";
 
 const Topbar = () => {
-  const { user, logout } = useAuthStore();
+  // Goes through useAuth so signing out also revokes the refresh-token family
+  // server-side. Calling the store's local teardown alone left the session
+  // alive on the server — and, previously, in the other localStorage key too.
+  const { user, logout } = useAuth();
   const { sidebarOpen, toggleSidebar } = useUIStore();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
   };
 
   const avatarText = user?.name
-    ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-    : 'AD';
+    ? user.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "AD";
 
   return (
     <header
@@ -23,7 +31,7 @@ const Topbar = () => {
         fixed top-0 right-0 z-30 flex items-center justify-between h-16
         bg-gray-900/80 backdrop-blur border-b border-gray-800 px-4
         transition-all duration-300
-        ${sidebarOpen ? 'left-60' : 'left-16'}
+        ${sidebarOpen ? "left-60" : "left-16"}
       `}
     >
       {/* Left: Sidebar toggle + Breadcrumb */}
@@ -50,8 +58,10 @@ const Topbar = () => {
         {/* User Menu */}
         <div className="flex items-center gap-3 ml-1">
           <div className="text-right hidden sm:block">
-            <p className="text-sm font-medium text-gray-200 leading-tight">{user?.name ?? 'Admin'}</p>
-            <p className="text-xs text-gray-500">{user?.email ?? ''}</p>
+            <p className="text-sm font-medium text-gray-200 leading-tight">
+              {user?.name ?? "Admin"}
+            </p>
+            <p className="text-xs text-gray-500">{user?.email ?? ""}</p>
           </div>
 
           {/* Avatar */}

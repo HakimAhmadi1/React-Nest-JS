@@ -12,19 +12,19 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@databases/*": ["src/utils/databases/*"],
-      "@databases": ["src/utils/databases/index"],
-      "@utils/*": ["src/utils/*/src/index"],
-      "@kernels/*": ["src/kernels/*/index"],
-      "@core/shared/*": ["src/utils/shared/*"]
+      "@common/*": ["src/common/*"],
+      "@database/*": ["src/database/*"],
+      "@modules/*": ["src/modules/*"]
     },
-    "types": ["node", "jest", "multer", "crypto-js"],
+    "types": ["node", "jest", "multer"],
+    "resolveJsonModule": true,
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": false,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false
+    "strictPropertyInitialization": false,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true
   }
 }

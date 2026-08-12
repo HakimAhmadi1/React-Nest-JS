@@ -1,149 +1,146 @@
 import axios from "axios";
 import { useAuthStore } from "@/store/authStore";
 
-const API_URL = import.meta.env.VITE_API_URL + "/";
+const API_URL = import.meta.env.VITE_API_URL;
 
-// Central Axios instance
+if (!API_URL) {
+  // Previously produced a literal "undefined/" baseURL and a wall of 404s.
+  throw new Error(
+    "VITE_API_URL is not set. Copy .env.example to .env and set it (e.g. http://localhost:3003/api).",
+  );
+}
+
 const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: API_URL.endsWith("/") ? API_URL : `${API_URL}/`,
+  headers: { "Content-Type": "application/json" },
   timeout: 15000,
+  // Required: the refresh token lives in an httpOnly cookie that the browser
+  // only attaches when credentials are enabled.
+  withCredentials: true,
 });
 
-/* ── Request interceptor: attach JWT token ── */
-api.interceptors.request.use((config) => {
-  // Check if the request explicitly asks for auth (default to true)
-  const requiresAuth = config.requiresAuth !== false;
+/* ── Request: attach the in-memory access token ───────────────────────── */
 
-  if (requiresAuth) {
-    // Try to get token from Zustand store first, fallback to localStorage
-    const token = useAuthStore.getState().token || JSON.parse(localStorage.getItem("user"))?.access;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+api.interceptors.request.use((config) => {
+  if (config.requiresAuth !== false) {
+    const token = useAuthStore.getState().accessToken;
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  // Let axios compute the multipart boundary itself. Setting this header by
+  // hand strips the boundary and the server cannot parse the body.
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
   }
 
   return config;
 });
 
-/* ── Response interceptor: handle unwrapping and errors ── */
+/* ── Response: unwrap the envelope, refresh once on 401 ───────────────── */
+
+/**
+ * Single-flight refresh: N concurrent 401s trigger one /auth/refresh call and
+ * all wait on the same promise.
+ */
+let refreshPromise = null;
+
+function refreshAccessToken() {
+  refreshPromise ??= axios
+    .post(`${api.defaults.baseURL}auth/refresh`, null, { withCredentials: true })
+    .then((res) => {
+      const token = res.data?.data?.accessToken ?? res.data?.accessToken;
+      if (!token) throw new Error("No access token in refresh response");
+      useAuthStore.getState().setAccessToken(token);
+      return token;
+    })
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
+}
+
 api.interceptors.response.use(
-  (response) => {
-    // Backend wraps everything in { success, data, message, statusCode }
-    // We return the inner 'data' for easier consumption in components.
-    return response.data?.data ?? response.data;
-  },
+  // The backend wraps success responses in { success, statusCode, message, data }.
+  (response) => response.data?.data ?? response.data,
+
   async (error) => {
-    const originalRequest = error.config;
+    const original = error.config;
     const status = error.response?.status;
 
-    // Handle 401 Unauthorized — token missing/expired
-    if (status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      const user = JSON.parse(localStorage.getItem("user"));
+    // Never try to refresh the refresh call itself.
+    const isAuthEndpoint = /\/auth\/(refresh|login|register|logout)$/.test(
+      original?.url ?? "",
+    );
 
-      if (user && user.refresh) {
-        try {
-          // Attempt to refresh the token
-          const res = await axios.post(`${API_URL}users/refresh/`, {
-            refresh: user.refresh,
-          });
-          const newAccess = res.data.access;
-          
-          // Update both localStorage and Zustand store
-          user.access = newAccess;
-          localStorage.setItem("user", JSON.stringify(user));
-          useAuthStore.getState().login({ user, token: newAccess });
-
-          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-          return api(originalRequest);
-        } catch (refreshError) {
-          // Refresh failed — clear session and force login
-          useAuthStore.getState().logout();
-          window.location.href = "/login";
-          return Promise.reject(refreshError);
-        }
-      } else {
-        // No refresh token — force logout
-        useAuthStore.getState().logout();
-        window.location.href = "/login";
-        return Promise.reject(error);
+    if (status === 401 && original && !original._retry && !isAuthEndpoint) {
+      original._retry = true;
+      try {
+        const token = await refreshAccessToken();
+        original.headers.Authorization = `Bearer ${token}`;
+        return api(original);
+      } catch {
+        // The session is genuinely over. Clear local state, but do NOT hard
+        // navigate — React Router handles the redirect, which keeps the app
+        // from reloading into a half-restored session.
+        useAuthStore.getState().clearSession();
+        return Promise.reject(normalizeError(error));
       }
     }
 
-    // Handle 403 Forbidden
-    if (status === 403) {
-      // For now, treat as unauthorized if they don't have permissions
-      // Alternatively, redirect to a /forbidden page
-      useAuthStore.getState().logout();
-      window.location.href = "/login";
-      return Promise.reject(error);
-    }
-
-    return Promise.reject(error.response?.data || error);
+    /*
+     * 403 is deliberately NOT a logout. It means "signed in, but this action
+     * needs a role you don't have" — the previous behaviour destroyed the
+     * session on every permission denial.
+     */
+    return Promise.reject(normalizeError(error));
   },
 );
+
+/** Flattens the backend error envelope into a predictable Error. */
+function normalizeError(error) {
+  const payload = error.response?.data;
+
+  const err = new Error(
+    payload?.message || error.message || "An unexpected error occurred",
+  );
+  // `statusCode` is what the envelope uses; `status` was always undefined.
+  err.status = payload?.statusCode ?? error.response?.status ?? 0;
+  err.errors = payload?.errors ?? [];
+  err.isNetworkError = !error.response;
+  return err;
+}
 
 export default api;
 
 /**
- * Common API Request Wrapper (Backward Compatibility)
- * Returns { success: boolean, data: T, status: number }
+ * Thin wrapper that THROWS on failure.
+ *
+ * The previous version caught errors and returned `{ success: false }`, so no
+ * React Query `onError` could ever fire and `onSuccess` ran on failed
+ * mutations — producing "Saved!" toasts for 400 responses.
  */
-export const apiRequest = async ({
+export const apiRequest = ({
   method,
   endpoint,
   data,
   params,
   headers = {},
-  endslash = false, // Set to false by default for NestJS compatibility
   requiresAuth = true,
-}) => {
-  try {
-    const responseData = await api({
-      method,
-      url: endslash ? `${endpoint}/` : endpoint,
-      data,
-      params,
-      headers,
-      requiresAuth,
-    });
+  signal,
+}) => api({ method, url: endpoint, data, params, headers, requiresAuth, signal });
 
-    return {
-      success: true,
-      data: responseData,
-      status: 200, // Normalized
-    };
-  } catch (error) {
-    console.error("API Request Error:", {
-      method,
-      endpoint,
-      error: error.message || error,
-    });
+export const getApi = (endpoint, params, auth = true, headers = {}, signal) =>
+  apiRequest({ method: "GET", endpoint, params, requiresAuth: auth, headers, signal });
 
-    return {
-      success: false,
-      message: error.message || "An unexpected error occurred",
-      status: error.status || 500,
-    };
-  }
-};
+export const postApi = (endpoint, data, params = null, auth = true, headers = {}) =>
+  apiRequest({ method: "POST", endpoint, data, params, requiresAuth: auth, headers });
 
-/* ── Exported Helpers for Functional Programming Style ── */
+export const putApi = (endpoint, data, params = null, auth = true, headers = {}) =>
+  apiRequest({ method: "PUT", endpoint, data, params, requiresAuth: auth, headers });
 
-export const getApi = (endpoint, params, auth = true, headers = {}, slash = false) => 
-  apiRequest({ method: "GET", endpoint, params, requiresAuth: auth, headers, endslash: slash });
+export const patchApi = (endpoint, data, params = null, auth = true, headers = {}) =>
+  apiRequest({ method: "PATCH", endpoint, data, params, requiresAuth: auth, headers });
 
-export const postApi = (endpoint, data, params = null, auth = true, headers = {}, slash = false) => 
-  apiRequest({ method: "POST", endpoint, data, params, requiresAuth: auth, headers, endslash: slash });
-
-export const putApi = (endpoint, data, params = null, auth = true, headers = {}, slash = false) => 
-  apiRequest({ method: "PUT", endpoint, data, params, requiresAuth: auth, headers, endslash: slash });
-
-export const patchApi = (endpoint, data, params = null, auth = true, headers = {}, slash = false) => 
-  apiRequest({ method: "PATCH", endpoint, data, params, requiresAuth: auth, headers, endslash: slash });
-
-export const deleteApi = (endpoint, params, auth = true, headers = {}, slash = false) => 
-  apiRequest({ method: "DELETE", endpoint, params, requiresAuth: auth, headers, endslash: slash });
+export const deleteApi = (endpoint, params, auth = true, headers = {}) =>
+  apiRequest({ method: "DELETE", endpoint, params, requiresAuth: auth, headers });

@@ -1,51 +1,47 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getApi } from '../services/api';
+import { useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getApi } from "@/services/api";
+import { SettingsContext } from "./settings-context";
 
-const SettingsContext = createContext(null);
-
-export const SettingsProvider = ({ children }) => {
-  const [settings, setSettings] = useState({
-    appName: 'Generic App',
-    currency: '$',
-    appEmail: '',
-    supportPhone: '',
-    heroImage: '',
-    heroVideo: '',
-  });
-  const [loading, setLoading] = useState(true);
-
-  const fetchSettings = async () => {
-    try {
-      const res = await getApi('system/settings', {}, false, {}, false);
-      if (res.success) {
-        // res.data is expected to be a map { appName: '...', currency: '...', ... }
-        setSettings((prev) => ({ 
-          ...prev, 
-          ...res.data 
-        }));
-      }
-    } catch (error) {
-      console.error('Failed to fetch system settings:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  return (
-    <SettingsContext.Provider value={{ settings, fetchSettings, loading }}>
-      {children}
-    </SettingsContext.Provider>
-  );
+const DEFAULTS = {
+  appName: "Generic App",
+  appEmail: "",
+  supportUrl: "/support",
+  logoUrl: "",
+  primaryColor: "",
 };
 
-export const useSettings = () => {
-  const context = useContext(SettingsContext);
-  if (!context) {
-    throw new Error('useSettings must be used within a SettingsProvider');
-  }
-  return context;
+/**
+ * Public branding, fetched from the unauthenticated settings endpoint.
+ *
+ * Backed by React Query rather than a hand-rolled effect: it handles
+ * cancellation, deduplication and out-of-order responses, which the previous
+ * useState + useEffect version did not.
+ */
+export const SettingsProvider = ({ children }) => {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["public-settings"],
+    queryFn: () => getApi("system/settings", {}, false),
+    // Branding is cosmetic — never block or retry-storm the app over it.
+    retry: false,
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const refetchSettings = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["public-settings"] }),
+    [queryClient],
+  );
+
+  const value = useMemo(
+    () => ({
+      settings: { ...DEFAULTS, ...(data ?? {}) },
+      fetchSettings: refetchSettings,
+      loading: isLoading,
+    }),
+    [data, isLoading, refetchSettings],
+  );
+
+  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 };

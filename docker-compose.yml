@@ -1,0 +1,86 @@
+# Root-level compose (it used to live under backend/, so `make docker-up` from
+# the repo root always failed with "no configuration file provided").
+#
+# The obsolete top-level `version:` key is gone.
+
+services:
+  db:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATABASE_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${DATABASE_NAME:-app_db}
+      MYSQL_USER: ${DATABASE_USER:-app_user}
+      MYSQL_PASSWORD: ${DATABASE_PASS:-app_password}
+    ports:
+      - '${DATABASE_PORT_HOST:-3307}:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Without this the API raced MySQL's first-boot initialisation and crashed.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'mysqladmin',
+          'ping',
+          '-h',
+          'localhost',
+          '-p${DATABASE_ROOT_PASSWORD:-root_password}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - '${API_PORT:-3003}:3003'
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      DATABASE_HOST: db
+      DATABASE_PORT: 3306
+      DATABASE_USER: ${DATABASE_USER:-app_user}
+      DATABASE_PASS: ${DATABASE_PASS:-app_password}
+      DATABASE_NAME: ${DATABASE_NAME:-app_db}
+      # No default: env validation refuses to boot without a real secret.
+      # Quoted because the error message contains ": ", which YAML would
+      # otherwise read as a nested mapping.
+      JWT_SECRET: '${JWT_SECRET:?set JWT_SECRET in .env - generate one with: npm run jwtsecret}'
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      JWT_ISSUER: ${JWT_ISSUER:-fullstack-boilerplate}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-fullstack-boilerplate-client}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Named volume, so uploads survive `docker compose up --build`.
+      - uploads_data:/app/uploads
+    # Schema first, then the app.
+    command: >
+      sh -c "npm run migration:run:prod && node dist/main"
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3003/api}
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      - api
+
+volumes:
+  mysql_data:
+  uploads_data:

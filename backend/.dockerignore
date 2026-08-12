@@ -2,6 +2,9 @@ node_modules
 dist
 coverage
 uploads
+# Keep `include=dev` out of the image: the builder installs devDependencies
+# explicitly, and line 11 of the Dockerfile must still be able to prune them.
+.npmrc
 .env
 .env.*
 !.env.example
